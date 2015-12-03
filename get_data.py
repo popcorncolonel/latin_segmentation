@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import random
+
 from BeautifulSoup import BeautifulSoup
 
 data_files = [f for f in os.listdir('data') if f.endswith('.html')]
