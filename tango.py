@@ -1,11 +1,12 @@
 import os
 import sys
+import ngram
 import random
 
 from math import log, exp
 from get_data import get_data
 from collections import defaultdict
-from ngram import BigramLM, TrigramLM, DeletedInterpolationTrigrams
+#from ngram import BigramLM, TrigramLM
 
 start_token = '`'
 end_token = '~'
@@ -17,7 +18,14 @@ def despace_sents(sents):
     return [despace(sent) for sent in sents]
 
 def preprocess_text(data_set):
-    return [start_token + sent.upper() + end_token for sent in data_set]
+    new_data_set = []
+    for sent in data_set:
+        sent = sent.upper()
+        sent = sent.replace('U', 'V')
+        sent = sent.replace('J', 'I')
+        sent = start_token + sent + end_token
+        new_data_set.append(sent)
+    return new_data_set
 
 def populate_vocabulary(training_set):
     vocabulary = defaultdict(int)
@@ -29,13 +37,8 @@ def populate_vocabulary(training_set):
     return vocabulary
 
 class Segmenter:
-    def __init__(self, bigram_model=None,
-                 trigram_model=None,
-                 quadgram_model=None):
-        self.bigram_model = bigram_model
-        self.trigram_model = trigram_model
-        self.quadgram_model = quadgram_model
-
+    def __init__(self, model_map):
+        self.model_map = model_map
     def tango(self, sent):
         def I_gt(y, z):
             if y > z:
@@ -55,8 +58,8 @@ class Segmenter:
             for d in [left, right]:
                 for j in range(1, n):
                     straddling = sent[k-j : k-j+n] 
-                    s_d = self.trigram_model.trigram_counts[tuple(d)]
-                    tj = self.trigram_model.trigram_counts[tuple(straddling)]
+                    s_d = self.model_map[n].counts[tuple(d)]
+                    tj = self.model_map[n].counts[tuple(straddling)]
                     total += I_gt(s_d, tj)
             return total / (2 * (n-1))
 
@@ -68,11 +71,12 @@ class Segmenter:
             return total / len(N)
 
         votes = []
-        N = set([3])
+        N = set([2,3,4])
         for k in range(len(sent)):
             votes.append(total_v(k, N))
 
-        t = 0.75
+        t = 0.95
+        print votes
 
         def should_insert_space(l):
             if l > 0 and l < len(sent)-1:
@@ -163,15 +167,25 @@ def main():
     print despace(sent)
 
     vocabulary = populate_vocabulary(training_set)
+    training_set = despace_sents(training_set)
 
-    model = BigramLM(set(vocabulary.keys()))
-    model.EstimateBigrams(training_set)
+    b_model = ngram.NgramLM(2)
+    b_model.EstimateNgrams(training_set)
 
-    t_model = TrigramLM(set(vocabulary.keys()))
-    t_model.EstimateTrigrams(training_set)
+    t_model = ngram.NgramLM(3)
+    t_model.EstimateNgrams(training_set)
 
-    seg = Segmenter(bigram_model=model,
-                    trigram_model=t_model)
+    q_model = ngram.NgramLM(4)
+    q_model.EstimateNgrams(training_set)
+
+    model_map = {
+            2: b_model,
+            3: t_model,
+            4: q_model
+    }
+
+    seg = Segmenter(model_map)
+
     #segmented = seg.ngrams(despace(test_set[0]))
     segmented = seg.tango(despace(sent))
     print segmented

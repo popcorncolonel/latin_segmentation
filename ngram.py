@@ -3,7 +3,7 @@ import random
 import itertools
 
 from math import log, exp
-from nltk.utils import ngrams
+from nltk.util import ngrams
 from collections import defaultdict
  
 start_token = '`'  # sentence boundary token.
@@ -230,8 +230,8 @@ class NgramLM:
 
    def EstimateNgrams(self, training_set):
        for sent in training_set:
-           ngrams = ngrams(list(sent), self.n)
-           for ngram in ngrams:
+           grams = ngrams(list(sent), self.n)
+           for ngram in grams:
                self.counts[ngram] += 1
 
  
