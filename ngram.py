@@ -3,6 +3,7 @@ import random
 import itertools
 
 from math import log, exp
+from nltk.utils import ngrams
 from collections import defaultdict
  
 start_token = '`'  # sentence boundary token.
@@ -211,4 +212,26 @@ def DeletedInterpolationTrigrams(corpus):
     return (lambda1, lambda2, lambda3)
 
 ########################## </Trigrams> ############################
+
+class QuadgramLM:
+    def __init__(self):
+        self.quadgram_counts = defaultdict(float)
+ 
+    def EstimateQuadgrams(self, training_set):
+        for sent in training_set:
+            quadgrams = ngrams(list(sent), 4)
+            for quad in quadgrams:
+                self.quadgram_counts[quad] += 1
+
+class NgramLM:
+   def __init__(self, n):
+       self.counts = defaultdict(float)
+       self.n = n
+
+   def EstimateNgrams(self, training_set):
+       for sent in training_set:
+           ngrams = ngrams(list(sent), self.n)
+           for ngram in ngrams:
+               self.counts[ngram] += 1
+
  
