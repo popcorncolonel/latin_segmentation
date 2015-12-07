@@ -5,8 +5,8 @@ import itertools
 from math import log, exp
 from collections import defaultdict
  
-start_token = "<S>"  # sentence boundary token.
-end_token = "</S>"  # sentence boundary token.
+start_token = '`'  # sentence boundary token.
+end_token = '~'  # sentence boundary token.
 
 # for defaultdicts with a nonzero default
 def constant_factory(value):
@@ -56,63 +56,6 @@ class BigramLM:
             self.log_probs[(word1, word2)] = log(lambda1 * unigram_probability(word2) + 
                                         lambda2 * bigram_probability(word1, word2))
 
-############################## Trigrams - Extra Credit ############################
-class TrigramLM:
-    def __init__(self, vocabulary=set()):
-        self.vocabulary = vocabulary
-        self.unigram_counts = defaultdict(float)
-        self.bigram_counts = defaultdict(float)
-        self.trigram_counts = defaultdict(float)
-        self.log_probs = defaultdict(constant_factory(float('-inf')))
- 
-    def EstimateTrigrams(self, training_set):
-        for sent in training_set:
-            self.unigram_counts[sent[0]] += 1 # <S>
-            self.unigram_counts[sent[1]] += 1 # <word>
-            self.bigram_counts[(sent[0], sent[1])] += 1 #<S><word>
-            self.trigram_counts[(end_token, sent[0], sent[1])] += 1 # </S><S><word>
-            for i in range(2, len(sent)):
-                self.trigram_counts[(sent[i-2], sent[i-1], sent[i])] += 1
-                self.bigram_counts[(sent[i-1], sent[i])] += 1
-                self.unigram_counts[sent[i]] += 1
-            # Sentence transitions not accounted for in the above loop.
-            self.bigram_counts[(end_token, start_token)] += 1  #</S><S>
-            self.trigram_counts[(sent[-2], end_token, start_token)] += 1 # <word></S><S>
-        for word1, word2, word3 in self.trigram_counts:
-            self.log_probs[(word1, word2, word3)] = log(self.trigram_counts[
-                  (word1, word2, word3)] / self.bigram_counts[(word1, word2)])
- 
-    # assigns a nonzero probability to all valid Bigrams
-    def LaplaceSmooth(self):
-        new_probs = {}
-        length = len(self.vocabulary) 
-        self.log_probs = defaultdict(constant_factory(log(1.0 / length)))
-        for word1, word2, word3 in self.trigram_counts:
-            self.log_probs[(word1, word2, word3)] = log((self.trigram_counts[
-            (word1, word2, word3)]+1.0) / (self.bigram_counts[(word1, word2)]+length))
-
-    def Interpolate(self, lambda1, lambda2, lambda3):
-        length = len(self.vocabulary)
-
-        def unigram_probability(word):
-            return self.unigram_counts[word] / length
-
-        def bigram_probability(word1, word2):
-            return ((self.bigram_counts[(word1, word2)]+1.0) /
-                    (self.unigram_counts[word1]+length))
-
-        def trigram_probability(word1, word2, word3):
-            return ((self.trigram_counts[(word1, word2, word3)]+1.0) /
-                    (self.bigram_counts[(word1, word2)]+length))
-
-        self.log_probs = defaultdict(constant_factory(log(1.0 / length)))
-        for word1, word2, word3 in self.trigram_counts:
-            self.log_probs[(word1, word2, word3)] = log(
-                                        lambda1 * unigram_probability(word3) + 
-                                        lambda2 * bigram_probability(word2, word3) +
-                                        lambda3 * trigram_probability(word1, word2, word3))
-############################## </Trigrams - Extra Credit> ############################
-
 def DeletedInterpolation(corpus):
     lambda1 = lambda2 = 0
     vocabulary = defaultdict(float)
@@ -152,6 +95,66 @@ def DeletedInterpolation(corpus):
     lambda2 /= total
     return (lambda1, lambda2)
  
+############################ Trigrams  ############################
+
+class TrigramLM:
+    def __init__(self, vocabulary=set()):
+        self.vocabulary = vocabulary
+        self.unigram_counts = defaultdict(float)
+        self.bigram_counts = defaultdict(float)
+        self.trigram_counts = defaultdict(float)
+        self.log_probs = defaultdict(constant_factory(float('-inf')))
+ 
+    def EstimateTrigrams(self, training_set):
+        for sent in training_set:
+            self.unigram_counts[sent[0]] += 1 # <S>
+            self.unigram_counts[sent[1]] += 1 # <word>
+            self.bigram_counts[(sent[0], sent[1])] += 1 #<S><word>
+            self.trigram_counts[(end_token, sent[0], sent[1])] += 1 # </S><S><word>
+            for i in range(2, len(sent)):
+                self.trigram_counts[(sent[i-2], sent[i-1], sent[i])] += 1
+                self.bigram_counts[(sent[i-1], sent[i])] += 1
+                self.unigram_counts[sent[i]] += 1
+            # Sentence transitions not accounted for in the above loop.
+            self.bigram_counts[(end_token, start_token)] += 1  #</S><S>
+            self.trigram_counts[(sent[-2], end_token, start_token)] += 1 # <word></S><S>
+        for word1, word2, word3 in self.trigram_counts:
+            try:
+                self.log_probs[(word1, word2, word3)] = log(self.trigram_counts[
+                      (word1, word2, word3)] / self.bigram_counts[(word1, word2)])
+            except:
+                pass
+                #print word1, word2, word3
+ 
+    # assigns a nonzero probability to all valid Bigrams
+    def LaplaceSmooth(self):
+        new_probs = {}
+        length = len(self.vocabulary) 
+        self.log_probs = defaultdict(constant_factory(log(1.0 / length)))
+        for word1, word2, word3 in self.trigram_counts:
+            self.log_probs[(word1, word2, word3)] = log((self.trigram_counts[
+            (word1, word2, word3)]+1.0) / (self.bigram_counts[(word1, word2)]+length))
+
+    def Interpolate(self, lambda1, lambda2, lambda3):
+        length = len(self.vocabulary)
+
+        def unigram_probability(word):
+            return self.unigram_counts[word] / length
+
+        def bigram_probability(word1, word2):
+            return ((self.bigram_counts[(word1, word2)]+1.0) /
+                    (self.unigram_counts[word1]+length))
+
+        def trigram_probability(word1, word2, word3):
+            return ((self.trigram_counts[(word1, word2, word3)]+1.0) /
+                    (self.bigram_counts[(word1, word2)]+length))
+
+        self.log_probs = defaultdict(constant_factory(log(1.0 / length)))
+        for word1, word2, word3 in self.trigram_counts:
+            self.log_probs[(word1, word2, word3)] = log(
+                                        lambda1 * unigram_probability(word3) + 
+                                        lambda2 * bigram_probability(word2, word3) +
+                                        lambda3 * trigram_probability(word1, word2, word3))
 
 def DeletedInterpolationTrigrams(corpus):
     lambda1 = lambda2 = lambda3 = 0
@@ -206,4 +209,6 @@ def DeletedInterpolationTrigrams(corpus):
     lambda2 /= total
     lambda3 /= total
     return (lambda1, lambda2, lambda3)
+
+########################## </Trigrams> ############################
  

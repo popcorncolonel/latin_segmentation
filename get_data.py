@@ -17,10 +17,13 @@ def search_data_files(string):
 
 char_match = re.compile('[a-zA-Z\. ]', flags=re.I)
 
+# turns
 def get_sents(text):
     sents = [sent.strip() for sent in text.split('.')]
-    return [sent+'.' for sent in sents if len(sent) > 0]
+    return [sent.replace(',','.')+'.' for sent in sents if len(sent) > 0]
 
+# Commas for 1-letter "sentences" (which are not actually sentences)
+# such as "G. Julius Caesar did this." => "G, Julius Caesar did this."
 def clean(text):
     new_text = []
     for c in text:
@@ -29,7 +32,13 @@ def clean(text):
                 if len(new_text) == 0 or new_text[-1] != ' ':
                     new_text += c
             else:
-                new_text += c
+                if c == '.':
+                    if len(new_text) <= 1 or new_text[-2] == ' ':
+                        new_text += ','
+                    else:
+                        new_text += '.'
+                else:
+                    new_text += c
                 if c == '.':
                     new_text += ' '
         else:
