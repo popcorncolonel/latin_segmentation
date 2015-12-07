@@ -4,8 +4,8 @@ import itertools
 import nltk.util
 
 from math import log, exp
-#from nltk.util import everygrams
 from nltk.util import ngrams
+from nltk.util import everygrams
 from collections import defaultdict
  
 start_token = '`'  # sentence boundary token.
@@ -235,9 +235,8 @@ class NgramLM:
    def EstimateNgrams(self, training_set):
        for sent in training_set:
            sent = list(sent)
-           for n in self.N:
-               grams = ngrams(sent, n)
-               for ngram in grams:
-                   self.model_map[n][ngram] += 1
+           for ngram in everygrams(sent, max_len=self.max_n):
+               n = len(ngram)
+               self.model_map[n][ngram] += 1
 
  

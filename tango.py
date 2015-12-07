@@ -89,6 +89,7 @@ class Segmenter:
                     return True
             return False
 
+        # TODO: are we putting spaces in the right place?
         def insert_spaces(sent):
             new_sent = []
             for l in range(len(sent)):
@@ -164,20 +165,21 @@ def main():
     print held_out_set[0]
     print
     '''
-    sent = test_set[3]
+    sent = random.choice(test_set)
     print sent
     print despace(sent)
 
     vocabulary = populate_vocabulary(training_set)
     training_set = despace_sents(training_set)
 
-    N = set([2,3,4,5])
-    N = set([2,3,4,5,6,7,8])
+    N = set([4,5,6,7,8])
+    print 'Learning n-gram model...'
     model = ngram.NgramLM(N)
     model.EstimateNgrams(training_set)
+    print 'Learned n-gram model.'
 
     for k, v in sorted(model.model_map[4].items(), key=lambda x:-1*x[1])[:5]:
-        print k, '->', v
+        print k, 'was seen', int(v), 'times.'
 
     seg = Segmenter(model.model_map, N)
 
