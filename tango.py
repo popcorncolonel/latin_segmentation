@@ -36,9 +36,13 @@ def populate_vocabulary(training_set):
             vocabulary[word] += 1
     return vocabulary
 
+# model_map is a map from ints to NgramLM's
+#           N -> dict<Ngram, count>
 class Segmenter:
-    def __init__(self, model_map):
+    def __init__(self, model_map, N):
         self.model_map = model_map
+        self.N = N
+
     def tango(self, sent):
         def I_gt(y, z):
             if y > z:
@@ -58,8 +62,8 @@ class Segmenter:
             for d in [left, right]:
                 for j in range(1, n):
                     straddling = sent[k-j : k-j+n] 
-                    s_d = self.model_map[n].counts[tuple(d)]
-                    tj = self.model_map[n].counts[tuple(straddling)]
+                    s_d = self.model_map[n][tuple(d)]
+                    tj = self.model_map[n][tuple(straddling)]
                     total += I_gt(s_d, tj)
             return total / (2 * (n-1))
 
@@ -71,12 +75,10 @@ class Segmenter:
             return total / len(N)
 
         votes = []
-        N = set([2,3,4])
         for k in range(len(sent)):
-            votes.append(total_v(k, N))
+            votes.append(total_v(k, self.N))
 
         t = 0.95
-        print votes
 
         def should_insert_space(l):
             if l > 0 and l < len(sent)-1:
@@ -169,38 +171,21 @@ def main():
     vocabulary = populate_vocabulary(training_set)
     training_set = despace_sents(training_set)
 
-    b_model = ngram.NgramLM(2)
-    b_model.EstimateNgrams(training_set)
+    N = set([2,3,4,5])
+    N = set([2,3,4,5,6,7,8])
+    model = ngram.NgramLM(N)
+    model.EstimateNgrams(training_set)
 
-    t_model = ngram.NgramLM(3)
-    t_model.EstimateNgrams(training_set)
+    for k, v in sorted(model.model_map[4].items(), key=lambda x:-1*x[1])[:5]:
+        print k, '->', v
 
-    q_model = ngram.NgramLM(4)
-    q_model.EstimateNgrams(training_set)
-
-    model_map = {
-            2: b_model,
-            3: t_model,
-            4: q_model
-    }
-
-    seg = Segmenter(model_map)
+    seg = Segmenter(model.model_map, N)
 
     #segmented = seg.ngrams(despace(test_set[0]))
     segmented = seg.tango(despace(sent))
     print segmented
     score = seg.evaluate(segmented, sent)
     print score
-
-    '''
-    t_model = TrigramLM(set(vocabulary.keys()))
-    t_model.EstimateTrigrams(training_set)
- 
-    t_model.LaplaceSmooth()
-    lambda1, lambda2, lambda3 = DeletedInterpolationTrigrams(held_out_set)
-    print lambda1, lambda2, lambda3
-    t_model.Interpolate(lambda1, lambda2, lambda3)
-    '''
 
 if __name__ == '__main__':
     main()

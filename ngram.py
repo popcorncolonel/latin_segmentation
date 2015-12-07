@@ -1,8 +1,10 @@
 import sys
 import random
 import itertools
+import nltk.util
 
 from math import log, exp
+#from nltk.util import everygrams
 from nltk.util import ngrams
 from collections import defaultdict
  
@@ -224,14 +226,18 @@ class QuadgramLM:
                 self.quadgram_counts[quad] += 1
 
 class NgramLM:
-   def __init__(self, n):
-       self.counts = defaultdict(float)
-       self.n = n
+   def __init__(self, N):
+       # maps n -> dict<ngram, count>
+       self.model_map = defaultdict(lambda:defaultdict(float))
+       self.N = N
+       self.max_n = max(N)
 
    def EstimateNgrams(self, training_set):
        for sent in training_set:
-           grams = ngrams(list(sent), self.n)
-           for ngram in grams:
-               self.counts[ngram] += 1
+           sent = list(sent)
+           for n in self.N:
+               grams = ngrams(sent, n)
+               for ngram in grams:
+                   self.model_map[n][ngram] += 1
 
  
