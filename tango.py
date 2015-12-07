@@ -10,9 +10,11 @@ from ngram import BigramLM, TrigramLM, DeletedInterpolationTrigrams
 start_token = '`'
 end_token = '~'
 
+def despace(sent):
+    return ''.join(sent.split())
+
 def despace_sents(sents):
-    sents = [''.join(sent.split()) for sent in sents]
-    return sents
+    return [despace(sent) for sent in sents]
 
 def preprocess_text(data_set):
     return [start_token + sent.upper() + end_token for sent in data_set]
@@ -35,7 +37,61 @@ class Segmenter:
         self.quadgram_model = quadgram_model
 
     def tango(self, sent):
-        return sent
+        def I_gt(y, z):
+            if y > z:
+                return 1
+            return 0
+
+        # vote for whether there should be a space at location k
+        def v(k, n):
+            if k-n < 0: # if the n-gram doesn't exist to the left
+                return 0
+            if k+n > len(sent): # if the n-gram doesn't exist to the right
+                return 0
+
+            left = sent[k-n : k]
+            right = sent[k : k+n]
+            total = 0.0
+            for d in [left, right]:
+                for j in range(1, n):
+                    straddling = sent[k-j : k-j+n] 
+                    s_d = self.trigram_model.trigram_counts[tuple(d)]
+                    tj = self.trigram_model.trigram_counts[tuple(straddling)]
+                    total += I_gt(s_d, tj)
+            return total / (2 * (n-1))
+
+        # average all possible n values
+        def total_v(k, N):
+            total = 0.0
+            for n in N:
+                total += v(k, n)
+            return total / len(N)
+
+        votes = []
+        N = set([3])
+        for k in range(len(sent)):
+            votes.append(total_v(k, N))
+
+        t = 0.75
+
+        def should_insert_space(l):
+            if l > 0 and l < len(sent)-1:
+                # local max => insert space
+                if votes[l] > votes[l-1] and votes[l] > votes[l+1]:
+                    return True
+                if votes[l] > t:
+                    return True
+            return False
+
+        def insert_spaces(sent):
+            new_sent = []
+            for l in range(len(sent)):
+                new_sent.append(sent[l])
+                if should_insert_space(l):
+                    new_sent.append(' ')
+            return ''.join(new_sent)
+
+        return insert_spaces(sent)
 
     def ngrams(self, sent, n=2):
         sent = list(sent)
@@ -94,7 +150,7 @@ def main():
     all_sents = preprocess_text(all_sents)
     training_set = all_sents[:9000]
     held_out_set = all_sents[9000:10000]
-    test_set = despace_sents(all_sents[10000:])
+    test_set = all_sents[10000:]
 
     '''
     print training_set[0]
@@ -102,18 +158,24 @@ def main():
     print held_out_set[0]
     print
     '''
-    print all_sents[10000]
-    print test_set[0]
+    sent = test_set[3]
+    print sent
+    print despace(sent)
 
     vocabulary = populate_vocabulary(training_set)
 
     model = BigramLM(set(vocabulary.keys()))
     model.EstimateBigrams(training_set)
 
-    seg = Segmenter(model)
-    segmented = seg.ngrams(test_set[0])
+    t_model = TrigramLM(set(vocabulary.keys()))
+    t_model.EstimateTrigrams(training_set)
+
+    seg = Segmenter(bigram_model=model,
+                    trigram_model=t_model)
+    #segmented = seg.ngrams(despace(test_set[0]))
+    segmented = seg.tango(despace(sent))
     print segmented
-    score = seg.evaluate(segmented, all_sents[10000])
+    score = seg.evaluate(segmented, sent)
     print score
 
     '''
