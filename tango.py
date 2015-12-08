@@ -79,6 +79,10 @@ class Segmenter:
             votes.append(total_v(k, self.N))
 
         t = 0.95
+        '''
+        for i, v in enumerate(votes):
+            print sent[i], v
+        '''
 
         def should_insert_space(l):
             if l > 0 and l < len(sent)-1:
@@ -89,16 +93,84 @@ class Segmenter:
                     return True
             return False
 
-        # TODO: are we putting spaces in the right place?
         def insert_spaces(sent):
             new_sent = []
             for l in range(len(sent)):
-                new_sent.append(sent[l])
                 if should_insert_space(l):
                     new_sent.append(' ')
+                new_sent.append(sent[l])
             return ''.join(new_sent)
 
         return insert_spaces(sent)
+
+    # Precision = tp / (tp + fp)
+    def precision(self, parsed, correct):
+        n_characters = len(parsed.replace(' ', ''))
+        parsed = list(parsed)
+        correct = list(correct)
+        i = j = 0
+        true_positives = 0.0
+        false_positives = 0.0
+        false_negatives = 0.0
+        true_negatives = 0.0
+        while True:
+            if i == len(parsed) or j == len(correct):
+                break
+            c1 = parsed[i]
+            c2 = correct[j]
+            if c2 == ' ' and c1 == ' ':
+                true_positives += 1
+                i += 1
+                j += 1
+            elif c2 == ' ': # we guessed there shouldn't be a space, but there is
+                false_negatives += 1
+                j += 1 
+            elif c1 == ' ': # we guessed space, but it shouldn't be
+                false_positives += 1
+                i += 1
+            else: # c1 == c2 != ' '
+                if parsed[i-1] != ' ' and correct[j-1] != ' ': # correctly guessed that there shouldn't be a 
+                    true_negatives += 1
+                i += 1
+                j += 1
+        return true_positives / (true_positives + false_positives)
+
+    # Recall = tp / (tp + fn)
+    def recall(self, parsed, correct):
+        n_characters = len(parsed.replace(' ', ''))
+        parsed = list(parsed)
+        correct = list(correct)
+        i = j = 0
+        true_positives = 0.0
+        false_positives = 0.0
+        false_negatives = 0.0
+        true_negatives = 0.0
+        while True:
+            if i == len(parsed) or j == len(correct):
+                break
+            c1 = parsed[i]
+            c2 = correct[j]
+            if c2 == ' ' and c1 == ' ':
+                true_positives += 1
+                i += 1
+                j += 1
+            elif c2 == ' ': # we guessed there shouldn't be a space, but there is
+                false_negatives += 1
+                j += 1 
+            elif c1 == ' ': # we guessed space, but it shouldn't be
+                false_positives += 1
+                i += 1
+            else: # c1 == c2 != ' '
+                if parsed[i-1] != ' ' and correct[j-1] != ' ': # correctly guessed that there shouldn't be a 
+                    true_negatives += 1
+                i += 1
+                j += 1
+        return true_positives / (true_positives + false_negatives)
+
+    def F(self, parsed, correct):
+        p = self.precision(parsed, correct)
+        r = self.recall(parsed, correct)
+        return 2 * (p * r) / (p+r)
 
     def ngrams(self, sent, n=2):
         sent = list(sent)
@@ -146,6 +218,14 @@ class Segmenter:
                 j += 1
         return n_correct / n_characters
 
+    def eval_test_set(self, test_set):
+        total = 0.0
+        for correct in test_set:
+            sent = self.tango(despace(correct))
+            total += self.evaluate(sent, correct)
+        print len(test_set)
+        return total / len(test_set)
+
 def get_local_data():
     with open('sentences.txt') as f:
         return [s.strip() for s in list(f)]
@@ -155,9 +235,9 @@ def main():
     all_sents = get_local_data()
 
     all_sents = preprocess_text(all_sents)
-    training_set = all_sents[:9000]
-    held_out_set = all_sents[9000:10000]
-    test_set = all_sents[10000:]
+    k = 11500
+    training_set = all_sents[:k]
+    test_set = all_sents[k:]
 
     '''
     print training_set[0]
@@ -166,28 +246,35 @@ def main():
     print
     '''
     sent = random.choice(test_set)
+    sent = min(all_sents[12030:12035], key=lambda x:len(x))
     print sent
     print despace(sent)
 
     vocabulary = populate_vocabulary(training_set)
     training_set = despace_sents(training_set)
 
-    N = set([4,5,6,7,8])
+    N = [5, 8, 7, 6]
     print 'Learning n-gram model...'
     model = ngram.NgramLM(N)
     model.EstimateNgrams(training_set)
     print 'Learned n-gram model.'
 
-    for k, v in sorted(model.model_map[4].items(), key=lambda x:-1*x[1])[:5]:
-        print k, 'was seen', int(v), 'times.'
+    #for k, v in sorted(model.model_map[5].items(), key=lambda x:-1*x[1])[:5]:
+    #    print k, 'was seen', int(v), 'times.'
 
     seg = Segmenter(model.model_map, N)
 
-    #segmented = seg.ngrams(despace(test_set[0]))
+    #segmented = seg.ngrams(despace(sent))
     segmented = seg.tango(despace(sent))
     print segmented
-    score = seg.evaluate(segmented, sent)
-    print score
+    score = seg.precision(segmented, sent)
+    print 'Precision:', score
+    score = seg.recall(segmented, sent)
+    print 'Recall:', score
+    score = seg.F(segmented, sent)
+    print 'F-measure:', score
+
+    #print seg.eval_test_set(test_set)
 
 if __name__ == '__main__':
     main()
