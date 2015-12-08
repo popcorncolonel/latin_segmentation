@@ -133,6 +133,8 @@ class Segmenter:
                     true_negatives += 1
                 i += 1
                 j += 1
+        if true_positives == 0:
+            return 0
         return true_positives / (true_positives + false_positives)
 
     # Recall = tp / (tp + fn)
@@ -165,11 +167,15 @@ class Segmenter:
                     true_negatives += 1
                 i += 1
                 j += 1
+        if true_positives == 0:
+            return 0
         return true_positives / (true_positives + false_negatives)
 
     def F(self, parsed, correct):
         p = self.precision(parsed, correct)
         r = self.recall(parsed, correct)
+        if p == r == 0.0:
+            return 0.0
         return 2 * (p * r) / (p+r)
 
     def ngrams(self, sent, n=2):
@@ -187,43 +193,16 @@ class Segmenter:
             new_sent.append(c2)
         return ''.join(new_sent)
 
-    # Under the assumption that sent.split() == correct.split().
-    def evaluate(self, sent, correct):
-        n_characters = len(sent.replace(' ', ''))
-        sent = list(sent)
-        correct = list(correct)
-        i = j = 0
-        false_positives = 0.0
-        false_negatives = 0.0
-        n_correct = 0.0
-        while True:
-            if i == len(sent) or j == len(correct):
-                break
-            c1 = sent[i]
-            c2 = correct[j]
-            if c2 == ' ' and c1 == ' ':
-                n_correct += 1
-                i += 1
-                j += 1
-            elif c2 == ' ': # we guessed there shouldn't be a space, but there is
-                false_negatives += 1
-                j += 1 
-            elif c1 == ' ': # we guessed space, but it shouldn't be
-                false_positives += 1
-                i += 1
-            else: # c1 == c2 != ' '
-                if sent[i-1] != ' ' and correct[j-1] != ' ': # correctly guessed that there shouldn't be a 
-                    n_correct += 1
-                i += 1
-                j += 1
-        return n_correct / n_characters
+    # put spaces everywhere
+    def baseline(self, sent):
+        middle = sent[2:-2]
+        return sent[:2] + middle.replace('', ' ') + sent[-2:]
 
     def eval_test_set(self, test_set):
         total = 0.0
         for correct in test_set:
             sent = self.tango(despace(correct))
-            total += self.evaluate(sent, correct)
-        print len(test_set)
+            total += self.F(sent, correct)
         return total / len(test_set)
 
 def get_local_data():
@@ -253,7 +232,7 @@ def main():
     vocabulary = populate_vocabulary(training_set)
     training_set = despace_sents(training_set)
 
-    N = [5, 8, 7, 6]
+    N = [3, 4, 5, 8, 7, 6]
     print 'Learning n-gram model...'
     model = ngram.NgramLM(N)
     model.EstimateNgrams(training_set)
@@ -274,7 +253,7 @@ def main():
     score = seg.F(segmented, sent)
     print 'F-measure:', score
 
-    #print seg.eval_test_set(test_set)
+    print seg.eval_test_set(test_set)
 
 if __name__ == '__main__':
     main()
