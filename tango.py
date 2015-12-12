@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import ngram
 import random
 
@@ -23,7 +24,7 @@ def preprocess_text(data_set):
         sent = sent.upper()
         sent = sent.replace('U', 'V')
         sent = sent.replace('J', 'I')
-        sent = start_token + sent + end_token
+        #sent = start_token + sent + end_token
         new_data_set.append(sent)
     return new_data_set
 
@@ -36,50 +37,101 @@ def populate_vocabulary(training_set):
             vocabulary[word] += 1
     return vocabulary
 
+
+def I_gt(y, z):
+    if y > z:
+        return 1
+    return 0
+
+# Vote for whether there should be a space at location k
+def tango_vote(segmenter, sent, k, n):
+    left = sent[k-n : k]
+    right = sent[k : k+n]
+    total = 0.0
+    for d in [left, right]:
+        for j in range(1, n):
+            straddling = sent[k-j : k-j+n] 
+            s_d = segmenter.model_map[n][tuple(d)]
+            tj = segmenter.model_map[n][tuple(straddling)]
+            '''
+            # debugging
+            if k == 15 and n == 5:
+                print tuple(d), '>', tuple(straddling)
+                print s_d, '>', tj
+                print I_gt(s_d, tj)
+                print
+            '''
+            total += I_gt(s_d, tj)
+    return total / (2 * (n-1))
+
+def ngram_vote(segmenter, sent, k, n):
+    ''' If "A B" is more likely than "AB", return 1.'''
+    sent = list(sent)
+    left = sent[k-n/2 : k]
+    right = sent[k : k+n/2]
+    space_prob = segmenter.log_probs[tuple(left)+tuple(' ')+tuple(right)]
+    this_prob = segmenter.log_probs[tuple(left)+tuple(right)]
+    return I_gt(space_prob, this_prob)
+
+'''
+def ngrams(self, sent, n=6):
+    # If "A B" is more likely than "AB", insert a space.
+    sent = list(sent)
+    new_sent = []
+    orig_n = n
+    for i, c2 in enumerate(sent):
+        n = orig_n
+        while i < n/2 or i > len(sent)-n/2:
+            n -= 2
+        if n <= 0:
+            new_sent.append(c2)
+            continue
+        left = sent[i-n/2 : i]
+        right = sent[i : i+n/2]
+        space_prob = self.log_probs[tuple(left)+tuple(' ')+tuple(right)]
+        this_prob = self.log_probs[tuple(left)+tuple(right)]
+        if space_prob > this_prob:
+            new_sent.append(' ')
+        new_sent.append(c2)
+    return ''.join(new_sent)
+'''
+
 # model_map is a map from ints to NgramLM's
 #           N -> dict<Ngram, count>
 class Segmenter:
-    def __init__(self, model_map, N):
+    # model_map is unsupervised
+    # log_probs is supervised
+    def __init__(self, model_map, log_probs, N):
         self.model_map = model_map
+        self.log_probs = log_probs
         self.N = N
 
-    def tango(self, sent):
-        def I_gt(y, z):
-            if y > z:
-                return 1
-            return 0
-
-        # vote for whether there should be a space at location k
-        def v(k, n):
-            if k-n < 0: # if the n-gram doesn't exist to the left
-                return 0
-            if k+n > len(sent): # if the n-gram doesn't exist to the right
-                return 0
-
-            left = sent[k-n : k]
-            right = sent[k : k+n]
-            total = 0.0
-            for d in [left, right]:
-                for j in range(1, n):
-                    straddling = sent[k-j : k-j+n] 
-                    s_d = self.model_map[n][tuple(d)]
-                    tj = self.model_map[n][tuple(straddling)]
-                    total += I_gt(s_d, tj)
-            return total / (2 * (n-1))
-
+    def tango(self, sent, vote_function=tango_vote):
         # average all possible n values
         def total_v(k, N):
             total = 0.0
+            length = len(N)
             for n in N:
-                total += v(k, n)
-            return total / len(N)
+                if k-n < 0: # if the n-gram doesn't exist to the left
+                    length -= 1
+                    continue
+                if k+n > len(sent): # if the n-gram doesn't exist to the right
+                    length -= 1
+                    continue
+                total += vote_function(self, sent, k, n)
+            if length == 0:
+                return 0
+            return total / length
 
         votes = []
+
         for k in range(len(sent)):
             votes.append(total_v(k, self.N))
 
-        t = 0.95
+        t = 1.0
+
         '''
+        # Debugging
         for i, v in enumerate(votes):
             print sent[i], v
         '''
@@ -178,32 +230,41 @@ class Segmenter:
             return 0.0
         return 2 * (p * r) / (p+r)
 
-    def ngrams(self, sent, n=2):
-        sent = list(sent)
-        new_sent = []
-        for i, c2 in enumerate(sent):
-            if i < n:
-                new_sent.append(c2)
-                continue
-            c1 = sent[i-1]
-            space_prob = self.bigram_model.log_probs[(c1, ' ')]
-            this_prob = self.bigram_model.log_probs[(c1, c2)]
-            if space_prob > 0.675 * this_prob:
-                new_sent.append(' ')
-            new_sent.append(c2)
-        return ''.join(new_sent)
 
-    # put spaces everywhere
     def baseline(self, sent):
-        middle = sent[2:-2]
-        return sent[:2] + middle.replace('', ' ') + sent[-2:]
+        ''' Put spaces everywhere '''
+        middle = sent[1:-2]
+        return sent[:1] + middle.replace('', ' ') + sent[-2:]
 
-    def eval_test_set(self, test_set):
-        total = 0.0
+    def eval_test_set(self, test_set, method):
+        total_F = 0.0
+        total_P = 0.0
+        total_R = 0.0
+        length = len(test_set)
         for correct in test_set:
-            sent = self.tango(despace(correct))
-            total += self.F(sent, correct)
-        return total / len(test_set)
+            if correct.count(' ') == 0.0:
+                length -= 1
+                continue
+            sent = self.tango(despace(correct), vote_function=method)
+            F = self.F(sent, correct)
+            if F == 0.0:
+                length -= 1
+                continue
+            '''
+            if F < 0.3:
+                print F
+                print 'Correct:', correct
+                print 'Guessed:', sent
+                print
+                time.sleep(0.5)
+            '''
+
+            total_F += F
+            total_P += self.precision(sent, correct)
+            total_R += self.recall(sent, correct)
+        print 'Precision:', total_P / length
+        print 'Recall:', total_R / length
+        return total_F / length
 
 def get_local_data():
     with open('sentences.txt') as f:
@@ -214,46 +275,60 @@ def main():
     all_sents = get_local_data()
 
     all_sents = preprocess_text(all_sents)
-    k = 11500
+    k = 11000
     training_set = all_sents[:k]
     test_set = all_sents[k:]
 
-    '''
-    print training_set[0]
-    print
-    print held_out_set[0]
-    print
-    '''
-    sent = random.choice(test_set)
-    sent = min(all_sents[12030:12035], key=lambda x:len(x))
-    print sent
-    print despace(sent)
+    N = [7, 4, 5, 6]
 
-    vocabulary = populate_vocabulary(training_set)
-    training_set = despace_sents(training_set)
+    # TODO: max valid word metric
+    word_dict = ngram.WordDict()
+    word_dict.populate_words(training_set)
 
-    N = [3, 4, 5, 8, 7, 6]
-    print 'Learning n-gram model...'
+    supervised_model = ngram.NgramLM(N)
     model = ngram.NgramLM(N)
-    model.EstimateNgrams(training_set)
+    print 'Learning n-gram model...'
+    model.EstimateNgrams(despace_sents(training_set))
+    supervised_model.EstimateNgrams(training_set)
     print 'Learned n-gram model.'
+
+    seg = Segmenter(model.model_map,
+                    supervised_model.log_probs,
+                    N)
 
     #for k, v in sorted(model.model_map[5].items(), key=lambda x:-1*x[1])[:5]:
     #    print k, 'was seen', int(v), 'times.'
 
-    seg = Segmenter(model.model_map, N)
+    sent = all_sents[11030]
+    #sent = all_sents[11029]
 
-    #segmented = seg.ngrams(despace(sent))
+    '''
+    segmented = seg.ngrams(despace(sent))
     segmented = seg.tango(despace(sent))
-    print segmented
-    score = seg.precision(segmented, sent)
-    print 'Precision:', score
-    score = seg.recall(segmented, sent)
-    print 'Recall:', score
-    score = seg.F(segmented, sent)
-    print 'F-measure:', score
+    '''
+    for f in [tango_vote, ngram_vote]:
+        segmented = seg.tango(despace(sent), vote_function=f)
 
-    print seg.eval_test_set(test_set)
+        print sent
+        print despace(sent)
+        print segmented
+
+        score = seg.precision(segmented, sent)
+        print 'Precision:', score
+        score = seg.recall(segmented, sent)
+        print 'Recall:', score
+        score = seg.F(segmented, sent)
+        print 'F-measure:', score
+
+        print
+        print '---------------------------------------------'
+        print
+
+    #print 'Avg F-measure (baseline): %f' % seg.eval_test_set(test_set, seg.baseline)
+    #print
+    print 'Avg F-measure (ngrams): %f' % seg.eval_test_set(test_set, ngram_vote)
+    print
+    print 'Avg F-measure (tango): %f' % seg.eval_test_set(test_set, tango_vote)
 
 if __name__ == '__main__':
     main()

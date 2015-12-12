@@ -31,7 +31,7 @@ class BigramLM:
             for i in range(1, len(sent)):
                 self.bigram_counts[(sent[i-1], sent[i])] += 1
             # Sentence transitions not accounted for in the above loop.
-            self.bigram_counts[(end_token, start_token)] += 1 
+            #self.bigram_counts[(end_token, start_token)] += 1 
         for word1, word2 in self.bigram_counts:
             self.log_probs[(word1, word2)] = log(self.bigram_counts[(word1, word2)] /
                     self.unigram_counts[word1])
@@ -71,7 +71,7 @@ def DeletedInterpolation(corpus):
             vocabulary[sent[i-1]] += 1
             # compute bigrams
             bigram_counts[(sent[i-1], sent[i])] += 1
-        vocabulary[end_token] += 1 #not accounted for by loop
+        #vocabulary[end_token] += 1 #not accounted for by loop
     length = len(vocabulary)
 
     def get_bigram_val(word1, word2):
@@ -113,14 +113,14 @@ class TrigramLM:
             self.unigram_counts[sent[0]] += 1 # <S>
             self.unigram_counts[sent[1]] += 1 # <word>
             self.bigram_counts[(sent[0], sent[1])] += 1 #<S><word>
-            self.trigram_counts[(end_token, sent[0], sent[1])] += 1 # </S><S><word>
+            #self.trigram_counts[(end_token, sent[0], sent[1])] += 1 # </S><S><word>
             for i in range(2, len(sent)):
                 self.trigram_counts[(sent[i-2], sent[i-1], sent[i])] += 1
                 self.bigram_counts[(sent[i-1], sent[i])] += 1
                 self.unigram_counts[sent[i]] += 1
             # Sentence transitions not accounted for in the above loop.
-            self.bigram_counts[(end_token, start_token)] += 1  #</S><S>
-            self.trigram_counts[(sent[-2], end_token, start_token)] += 1 # <word></S><S>
+            #self.bigram_counts[(end_token, start_token)] += 1  #</S><S>
+            #self.trigram_counts[(sent[-2], end_token, start_token)] += 1 # <word></S><S>
         for word1, word2, word3 in self.trigram_counts:
             try:
                 self.log_probs[(word1, word2, word3)] = log(self.trigram_counts[
@@ -231,6 +231,7 @@ class NgramLM:
        self.model_map = defaultdict(lambda:defaultdict(float))
        self.N = N
        self.max_n = max(N)
+       self.log_probs = defaultdict(lambda:float('-inf'))
 
    def EstimateNgrams(self, training_set):
        for sent in training_set:
@@ -238,5 +239,48 @@ class NgramLM:
            for ngram in everygrams(sent, max_len=self.max_n):
                n = len(ngram)
                self.model_map[n][ngram] += 1
+       for n in self.model_map:
+           for ngram in self.model_map[n]:
+               if n == 1:
+                   pass
+               else:
+                   self.log_probs[ngram] = log(
+                       self.model_map[n][ngram] /
+                       self.model_map[n-1][ngram[:-1]]
+                   )
 
- 
+class WordDict:
+    def __init__(self):
+        self.done_token = 'done'
+        self.trie = {}
+
+    def populate_words(self, training_set):
+        for sent in training_set:
+            words = sent.replace('.', '').split()
+            for word in words:
+                self.insert_word(word)
+
+    def insert_word(self, word):
+        history = self.trie
+        for c in word:
+            if c not in history:
+                history[c] = {}
+            history = history[c]
+        history[self.done_token] = True
+
+    def is_word(self, word):
+        history = self.trie
+        for c in word:
+            if c not in history:
+                return False
+            history = history[c]
+        return self.done_token in history
+
+    def is_partial_word(self, word_fragment):
+        history = self.trie
+        for c in word_fragment:
+            if c not in history:
+                return False
+            history = history[c]
+        return True
+
