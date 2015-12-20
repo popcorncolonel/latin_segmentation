@@ -5,7 +5,7 @@ import ngram
 import random
 
 from math import log, exp
-from get_data import get_data
+#from get_data import get_data
 from collections import defaultdict
 
 def despace(sent):
@@ -273,10 +273,10 @@ def main():
     sent = all_sents[11027]
 
     for f, name in [
-              (seg.baseline, "Baseline"),
               (lambda x: seg.tango(x, tango_vote), "Tango"),
               (lambda x: seg.tango(x, ngram_vote), "N-gram metric"),
-              (seg.max_matching, "Max Match")]:
+              (seg.max_matching, "Max Match")
+            ]:
         segmented = f(despace(sent))
 
         print 'Parsing with', name, 'method:'
@@ -295,11 +295,13 @@ def main():
         print '---------------------------------------------'
         print
 
+    print 'Avg F-measure (baseline): %f' % seg.eval_test_set(test_set, seg.baseline)
+    print
     print 'Avg F-measure (tango): %f' % seg.eval_test_set(test_set, lambda x: seg.tango(x, tango_vote))
     print
     print 'Avg F-measure (ngrams): %f' % seg.eval_test_set(test_set, lambda x: seg.tango(x, ngram_vote))
     print
-    print 'Avg F-measure (maxmatch): %f' % seg.eval_test_set(test_set, lambda x: seg.max_matching(x))
+    print 'Avg F-measure (maxmatch): %f' % seg.eval_test_set(test_set, seg.max_matching)
 
 if __name__ == '__main__':
     main()
