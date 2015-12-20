@@ -7,10 +7,6 @@ import random
 from math import log, exp
 from get_data import get_data
 from collections import defaultdict
-#from ngram import BigramLM, TrigramLM
-
-start_token = '`'
-end_token = '~'
 
 def despace(sent):
     return ''.join(sent.split())
@@ -24,14 +20,11 @@ def preprocess_text(data_set):
         sent = sent.upper()
         sent = sent.replace('U', 'V')
         sent = sent.replace('J', 'I')
-        #sent = start_token + sent + end_token
         new_data_set.append(sent)
     return new_data_set
 
 def populate_vocabulary(training_set):
     vocabulary = defaultdict(int)
-    vocabulary[start_token] = len(training_set)
-    vocabulary[end_token] = len(training_set)
     for sent in training_set:
         for word in sent:
             vocabulary[word] += 1
@@ -53,14 +46,6 @@ def tango_vote(segmenter, sent, k, n):
             straddling = sent[k-j : k-j+n] 
             s_d = segmenter.model_map[n][tuple(d)]
             tj = segmenter.model_map[n][tuple(straddling)]
-            '''
-            # debugging
-            if k == 15 and n == 5:
-                print tuple(d), '>', tuple(straddling)
-                print s_d, '>', tj
-                print I_gt(s_d, tj)
-                print
-            '''
             total += I_gt(s_d, tj)
     return total / (2 * (n-1))
 
@@ -73,38 +58,45 @@ def ngram_vote(segmenter, sent, k, n):
     this_prob = segmenter.log_probs[tuple(left)+tuple(right)]
     return I_gt(space_prob, this_prob)
 
-'''
-def ngrams(self, sent, n=6):
-    # If "A B" is more likely than "AB", insert a space.
-    sent = list(sent)
-    new_sent = []
-    orig_n = n
-    for i, c2 in enumerate(sent):
-        n = orig_n
-        while i < n/2 or i > len(sent)-n/2:
-            n -= 2
-        if n <= 0:
-            new_sent.append(c2)
-            continue
-        left = sent[i-n/2 : i]
-        right = sent[i : i+n/2]
-        space_prob = self.log_probs[tuple(left)+tuple(' ')+tuple(right)]
-        this_prob = self.log_probs[tuple(left)+tuple(right)]
-        if space_prob > this_prob:
-            new_sent.append(' ')
-        new_sent.append(c2)
-    return ''.join(new_sent)
-'''
-
 # model_map is a map from ints to NgramLM's
 #           N -> dict<Ngram, count>
 class Segmenter:
     # model_map is unsupervised
     # log_probs is supervised
-    def __init__(self, model_map, log_probs, N):
+    # word_dict is a WordDict.
+    def __init__(self, model_map, log_probs, word_dict, N):
         self.model_map = model_map
         self.log_probs = log_probs
+        self.word_dict = word_dict
         self.N = N
+
+    def baseline(self, sent):
+        new_sent = []
+        new_sent.append(sent[0])
+        for i in range(1, len(sent)-1):
+            c1 = sent[i-1]
+            c2 = sent[i]
+            # If the prev char is the end of a word and the next char is 
+            # the beginning of a word
+            if self.word_dict.is_ending_char(c1):
+                if c2 in self.word_dict.trie:
+                    new_end.append(' ')
+            new_sent.append(c2)
+        return ''.join(new_sent) + '.'
+
+    def max_matching(self, sent):
+        new_sent = []
+        curr_word = ''
+        if sent[-1] == '.':
+            sent = sent[:-1]
+        for c in sent:
+            if not self.word_dict.is_partial_word(curr_word + c):
+                new_sent.append(curr_word)
+                new_sent.append(' ')
+                curr_word = ''
+            curr_word += c
+        new_sent.append(curr_word)
+        return ''.join(new_sent) + '.'
 
     def tango(self, sent, vote_function=tango_vote):
         # average all possible n values
@@ -130,12 +122,6 @@ class Segmenter:
 
         t = 1.0
 
-        '''
-        # Debugging
-        for i, v in enumerate(votes):
-            print sent[i], v
-        '''
-
         def should_insert_space(l):
             if l > 0 and l < len(sent)-1:
                 # local max => insert space
@@ -157,7 +143,6 @@ class Segmenter:
 
     # Precision = tp / (tp + fp)
     def precision(self, parsed, correct):
-        n_characters = len(parsed.replace(' ', ''))
         parsed = list(parsed)
         correct = list(correct)
         i = j = 0
@@ -191,7 +176,6 @@ class Segmenter:
 
     # Recall = tp / (tp + fn)
     def recall(self, parsed, correct):
-        n_characters = len(parsed.replace(' ', ''))
         parsed = list(parsed)
         correct = list(correct)
         i = j = 0
@@ -215,7 +199,8 @@ class Segmenter:
                 false_positives += 1
                 i += 1
             else: # c1 == c2 != ' '
-                if parsed[i-1] != ' ' and correct[j-1] != ' ': # correctly guessed that there shouldn't be a 
+                # correctly guessed that there shouldn't be a space
+                if parsed[i-1] != ' ' and correct[j-1] != ' ': 
                     true_negatives += 1
                 i += 1
                 j += 1
@@ -245,19 +230,8 @@ class Segmenter:
             if correct.count(' ') == 0.0:
                 length -= 1
                 continue
-            sent = self.tango(despace(correct), vote_function=method)
+            sent = method(despace(correct))
             F = self.F(sent, correct)
-            if F == 0.0:
-                length -= 1
-                continue
-            '''
-            if F < 0.3:
-                print F
-                print 'Correct:', correct
-                print 'Guessed:', sent
-                print
-                time.sleep(0.5)
-            '''
 
             total_F += F
             total_P += self.precision(sent, correct)
@@ -275,13 +249,12 @@ def main():
     all_sents = get_local_data()
 
     all_sents = preprocess_text(all_sents)
-    k = 11000
+    k = 10000
     training_set = all_sents[:k]
     test_set = all_sents[k:]
 
     N = [7, 4, 5, 6]
 
-    # TODO: max valid word metric
     word_dict = ngram.WordDict()
     word_dict.populate_words(training_set)
 
@@ -294,21 +267,19 @@ def main():
 
     seg = Segmenter(model.model_map,
                     supervised_model.log_probs,
+                    word_dict,
                     N)
 
-    #for k, v in sorted(model.model_map[5].items(), key=lambda x:-1*x[1])[:5]:
-    #    print k, 'was seen', int(v), 'times.'
+    sent = all_sents[11027]
 
-    sent = all_sents[11030]
-    #sent = all_sents[11029]
+    for f, name in [
+              (seg.baseline, "Baseline"),
+              (lambda x: seg.tango(x, tango_vote), "Tango"),
+              (lambda x: seg.tango(x, ngram_vote), "N-gram metric"),
+              (seg.max_matching, "Max Match")]:
+        segmented = f(despace(sent))
 
-    '''
-    segmented = seg.ngrams(despace(sent))
-    segmented = seg.tango(despace(sent))
-    '''
-    for f in [tango_vote, ngram_vote]:
-        segmented = seg.tango(despace(sent), vote_function=f)
-
+        print 'Parsing with', name, 'method:'
         print sent
         print despace(sent)
         print segmented
@@ -324,11 +295,11 @@ def main():
         print '---------------------------------------------'
         print
 
-    #print 'Avg F-measure (baseline): %f' % seg.eval_test_set(test_set, seg.baseline)
-    #print
-    print 'Avg F-measure (ngrams): %f' % seg.eval_test_set(test_set, ngram_vote)
+    print 'Avg F-measure (tango): %f' % seg.eval_test_set(test_set, lambda x: seg.tango(x, tango_vote))
     print
-    print 'Avg F-measure (tango): %f' % seg.eval_test_set(test_set, tango_vote)
+    print 'Avg F-measure (ngrams): %f' % seg.eval_test_set(test_set, lambda x: seg.tango(x, ngram_vote))
+    print
+    print 'Avg F-measure (maxmatch): %f' % seg.eval_test_set(test_set, lambda x: seg.max_matching(x))
 
 if __name__ == '__main__':
     main()
